@@ -125,9 +125,9 @@ def wipe_dm(message_list, user_id):
     if user_id not in WhitelistedFriendships:
         r = req.delete(f"https://discord.com/api/v9/users/@me/relationships/{user_id}", headers=generate_headers())
         if r.status_code == 204:
-            print(f"Deleted friendship with {current_channel}")
+            print(f"Deleted friendship with {user_id}")
         else:
-            print(f"Failed to delete friendship with {current_channel} - Code: {r.status_code}")
+            print(f"Failed to delete friendship with {user_id} - Code: {r.status_code}")
 
         # Close DM
         r = req.delete(f"https://discord.com/api/v9/channels/{current_channel}", headers=generate_headers())
