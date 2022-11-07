@@ -92,26 +92,29 @@ def fetch_dms():
     identify_json = json.loads(data)
     for dm in identify_json["d"]["private_channels"]:
         if dm["type"] == 1:
-            if dm["id"] in WhitelistedUsers:
+            user_id = str(dm["recipient_ids"][0])
+            channel_id = str(dm["id"])
+            print(f"User ID: {user_id}")
+            print(f"Channel ID: {channel_id}")
+            if user_id in WhitelistedUsers:
                 continue
-            messages = fetch_all_messages(dm["id"])
-            wipe_dm(messages)
+            else:
+                if user_id not in WhitelistedUsers:
+                    messages = fetch_all_messages(dm["id"])
+                    wipe_dm(messages, user_id)
 
 
-def wipe_dm(message_list):
+def wipe_dm(message_list, user_id):
     if not message_list:
         return
     try:
         current_channel = message_list[0]["channel_id"]
     except IndexError:
         return
-    print(f"Current channel: {current_channel}")
+    print(f"Current channel ID: {current_channel}")
     for message in message_list:
         if message["author"]["id"] == YourUserID:
             current_channel = message["channel_id"]
-            if current_channel in WhitelistedUsers:
-                print(f"Ignoring user: {current_channel}")
-                continue
             message_id = message["id"]
             r = req.delete(f"https://discord.com/api/v9/channels/{current_channel}/messages/{message_id}", headers=generate_headers())
             if r.status_code == 204:
@@ -119,12 +122,15 @@ def wipe_dm(message_list):
             else:
                 print(f"Failed to delete message ID {message_id} - channel {current_channel} - Code: {r.status_code}")
             time.sleep(generate_random_time() / 1000)
-    if current_channel not in WhitelistedFriendships:
-        r = req.delete(f"https://discord.com/api/v9/users/@me/relationships/{current_channel}", headers=generate_headers())
+    if user_id not in WhitelistedFriendships:
+        r = req.delete(f"https://discord.com/api/v9/users/@me/relationships/{user_id}", headers=generate_headers())
         if r.status_code == 204:
             print(f"Deleted friendship with {current_channel}")
         else:
-            print(f"Failed to delete friendship with {current_channel}")
+            print(f"Failed to delete friendship with {current_channel} - Code: {r.status_code}")
+
+        # Close DM
+        r = req.delete(f"https://discord.com/api/v9/channels/{current_channel}", headers=generate_headers())
 
 
 def fetch_all_messages(user_id: str) -> list:
@@ -144,11 +150,9 @@ def fetch_all_messages(user_id: str) -> list:
     except IndexError:
         print("DM empty. Skipping!")
         return user_messages
-    if messages[message_count_this_block - 1]["channel_id"] in WhitelistedUsers:
-        return user_messages
     if message_count_this_block == 50:
         while fetching:
-            time.sleep(0.3)
+            time.sleep(0.25)
             r = req.get(f"https://discord.com/api/v9/channels/{user_id}/messages?before={last_message}&limit=50", headers=generate_headers())
             messages = r.json()
             message_count_this_block = 0
@@ -172,6 +176,7 @@ def main():
         print("Valid token!")
     else:
         error_catcher("invalid_token")
+        quit(1)
     fetch_dms()
 
 
