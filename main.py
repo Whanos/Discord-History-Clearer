@@ -1,7 +1,7 @@
 TOKEN = ""  # Authentication token. Do not share this.
 #  WhitelistedServers = [""]  # List of server IDs to ignore. # Currently does nothing
 WhitelistedUsers = [""]  # List of user IDs to ignore
-WhitelistedFriendships = [""]
+WhitelistedFriendships = [""]  # List of user IDs to delete messages for, but to not unfriend.
 YourUserID = ""
 
 # ----------- #
