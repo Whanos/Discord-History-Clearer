@@ -1,4 +1,5 @@
-TOKEN = ""  # Authentication token. Do not share this.WhitelistedServers = ["796334983542341632", "911382562000211999", "698304586481533030", "924497342156111912", "984582850588340264", "740977707629805669", "1011606221914128505", "877096010969645086"]  # List of server IDs to ignore.
+TOKEN = ""  # Authentication token. Do not share this.
+#  WhitelistedServers = [""]  # List of server IDs to ignore. # Currently does nothing
 WhitelistedUsers = [""]  # List of user IDs to ignore
 WhitelistedFriendships = [""]
 YourUserID = ""
