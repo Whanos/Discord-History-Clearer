@@ -1,7 +1,6 @@
-TOKEN = ""  # Authentication token. Do not share this.
-WhitelistedServers = []  # List of server IDs to ignore.
-WhitelistedUsers = []  # List of user IDs to ignore
-WhitelistedFriendships = []  # List of user IDs to delete messages for, but not unfriend.
+TOKEN = ""  # Authentication token. Do not share this.WhitelistedServers = ["796334983542341632", "911382562000211999", "698304586481533030", "924497342156111912", "984582850588340264", "740977707629805669", "1011606221914128505", "877096010969645086"]  # List of server IDs to ignore.
+WhitelistedUsers = [""]  # List of user IDs to ignore
+WhitelistedFriendships = [""]
 YourUserID = ""
 
 # ----------- #
@@ -87,12 +86,32 @@ def fetch_identify() -> str:
     return data
 
 
+def unfriend_leftovers():
+    print("Deleting leftover friends")
+    data = fetch_identify()
+    identify_json = json.loads(data)
+    for relationship in identify_json["d"]["relationships"]:
+        user_id = str(relationship["user_id"])
+        if user_id not in WhitelistedUsers:
+            if user_id not in WhitelistedFriendships:
+                r = req.delete(f"https://discord.com/api/v9/users/@me/relationships/{user_id}",
+                               headers=generate_headers())
+                if r.status_code == 204:
+                    print(f"Deleted friendship with {user_id}")
+                else:
+                    print(f"Failed to delete friendship with {user_id} - Code: {r.status_code}")
+                time.sleep(0.3)
+
+
 def fetch_dms():
     data = fetch_identify()
     identify_json = json.loads(data)
     for dm in identify_json["d"]["private_channels"]:
         if dm["type"] == 1:
-            user_id = str(dm["recipient_ids"][0])
+            try:
+                user_id = str(dm["user_id"])
+            except KeyError:
+                user_id = str(dm["recipient_ids"][0])
             channel_id = str(dm["id"])
             print(f"User ID: {user_id}")
             print(f"Channel ID: {channel_id}")
@@ -116,7 +135,8 @@ def wipe_dm(message_list, user_id):
         if message["author"]["id"] == YourUserID:
             current_channel = message["channel_id"]
             message_id = message["id"]
-            r = req.delete(f"https://discord.com/api/v9/channels/{current_channel}/messages/{message_id}", headers=generate_headers())
+            r = req.delete(f"https://discord.com/api/v9/channels/{current_channel}/messages/{message_id}",
+                           headers=generate_headers())
             if r.status_code == 204:
                 print(f"Successfully deleted message ID {message_id} - channel {current_channel}")
             else:
@@ -153,7 +173,8 @@ def fetch_all_messages(user_id: str) -> list:
     if message_count_this_block == 50:
         while fetching:
             time.sleep(0.25)
-            r = req.get(f"https://discord.com/api/v9/channels/{user_id}/messages?before={last_message}&limit=50", headers=generate_headers())
+            r = req.get(f"https://discord.com/api/v9/channels/{user_id}/messages?before={last_message}&limit=50",
+                        headers=generate_headers())
             messages = r.json()
             message_count_this_block = 0
             for msg in messages:
@@ -178,6 +199,7 @@ def main():
         error_catcher("invalid_token")
         quit(1)
     fetch_dms()
+    unfriend_leftovers()
 
 
 if __name__ == '__main__':
