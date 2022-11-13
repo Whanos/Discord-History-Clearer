@@ -1,3 +1,5 @@
+# This code is hacky. I know.
+
 TOKEN = ""  # Authentication token. Do not share this.
 #  WhitelistedServers = [""]  # List of server IDs to ignore. # Currently does nothing
 WhitelistedUsers = [""]  # List of user IDs to ignore
@@ -6,27 +8,34 @@ YourUserID = ""
 
 # ----------- #
 
-import requests as req
-import websocket
 import json
 import random
 import time
 
+import requests as req
+import websocket
+
 # ----------- #
 
+#  From lots (200k+ deleted messages), 2600ms + 100-300ms works very well to avoid ratelimiting.
+#  You may override this here, but I wouldn't recommend it, as you will get ratelimited very fast.
 BaseDeleteDelay = 2600
 
-
 # ----------- #
+
 
 def generate_headers() -> dict:
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9007 Chrome/91.0.4472.164 Electron/13.6.6 Safari/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) discord/1.0.9007 "
+                      "Chrome/91.0.4472.164 Electron/13.6.6 Safari/537.36",
         "Accept-Language": "en-GB",
         "locale": "en-GB",
         "X-Debug-Options": "bugReporterEnabled",
         "X-Discord-Locale": "en-GB",
-        "X-Super-Properties": "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFibGUiLCJjbGllbnRfdmVyc2lvbiI6IjEuMC45MDA3Iiwib3NfdmVyc2lvbiI6IjEwLjAuMjI2MjEiLCJvc19hcmNoIjoieDY0Iiwic3lzdGVtX2xvY2FsZSI6ImVuLUdCIiwiY2xpZW50X2J1aWxkX251bWJlciI6MTU2MDgwLCJjbGllbnRfZXZlbnRfc291cmNlIjpudWxsfQ==",
+        "X-Super-Properties": "eyJvcyI6IldpbmRvd3MiLCJicm93c2VyIjoiRGlzY29yZCBDbGllbnQiLCJyZWxlYXNlX2NoYW5uZWwiOiJzdGFi"
+                              "bGUiLCJjbGllbnRfdmVyc2lvbiI6IjEuMC45MDA3Iiwib3NfdmVyc2lvbiI6IjEwLjAuMjI2MjEiLCJvc19hcmNo"
+                              "IjoieDY0Iiwic3lzdGVtX2xvY2FsZSI6ImVuLUdCIiwiY2xpZW50X2J1aWxkX251bWJlciI6MTU2MDgwLCJjbGll"
+                              "bnRfZXZlbnRfc291cmNlIjpudWxsfQ==",
         "Authorization": f"{TOKEN}",
         "Sec-Fetch-Dest": "empty",
         "Sec-Fetch-Mode": "cors",
@@ -38,7 +47,7 @@ def generate_headers() -> dict:
 
 
 def generate_random_time() -> int:
-    offset = random.randint(100, 500)
+    offset = random.randint(100, 300)
     final_time = BaseDeleteDelay + offset
 
     return final_time
@@ -108,7 +117,7 @@ def fetch_dms():
     data = fetch_identify()
     identify_json = json.loads(data)
     for dm in identify_json["d"]["private_channels"]:
-        if dm["type"] == 1:
+        if dm["type"] == 1:  # Non-Group Chats
             try:
                 user_id = str(dm["user_id"])
             except KeyError:
@@ -121,10 +130,25 @@ def fetch_dms():
             else:
                 if user_id not in WhitelistedUsers:
                     messages = fetch_all_messages(dm["id"])
-                    wipe_dm(messages, user_id)
+                    wipe_dm(messages, user_id, False)
+        elif dm["type"] == 3:
+            try:
+                owner_id = str(dm["owner_id"])
+            except KeyError:
+                owner_id = str(dm["recipient_ids"][0])
+            channel_id = str(dm["id"])
+            print(f"Group Chat Owner ID: {owner_id}")
+            print(f"Channel ID: {channel_id}")
+            if owner_id in WhitelistedUsers:
+                continue
+            else:
+                if owner_id not in WhitelistedUsers:
+                    messages = fetch_all_messages(dm["id"])
+                    wipe_dm(messages, owner_id, True)
+        #  Side-note: WTF does type: 2 indicate?
 
 
-def wipe_dm(message_list, user_id):
+def wipe_dm(message_list, user_id, is_gc):
     if not message_list:
         return
     try:
@@ -140,6 +164,12 @@ def wipe_dm(message_list, user_id):
                            headers=generate_headers())
             if r.status_code == 204:
                 print(f"Successfully deleted message ID {message_id} - channel {current_channel}")
+            elif r.status_code == 429:
+                print(f"Ratelimited. Cooling off for {BaseDeleteDelay * 15}ms, I suggest upping the delay!")
+                time.sleep((BaseDeleteDelay * 15) / 1000)
+            elif r.status_code == 403:
+                print(f"Got error code 403 on message {message_id}. This is normal if the message is undeletable ("
+                      f"call records, adding someone to a GC, etc). You can ignore it safely.")
             else:
                 print(f"Failed to delete message ID {message_id} - channel {current_channel} - Code: {r.status_code}")
             time.sleep(generate_random_time() / 1000)
@@ -151,11 +181,21 @@ def wipe_dm(message_list, user_id):
             print(f"Failed to delete friendship with {user_id} - Code: {r.status_code}")
 
         # Close DM
-        r = req.delete(f"https://discord.com/api/v9/channels/{current_channel}", headers=generate_headers())
+        if not is_gc:
+            r = req.delete(f"https://discord.com/api/v9/channels/{current_channel}", headers=generate_headers())
+            if r.status_code != 204:
+                print(f"Failed to Close DM {current_channel}. Code: {r.status_code}.")
+        else:
+            #  Leave silently
+            r = req.delete(f"https://discord.com/api/v9/channels/{current_channel}?silent=true",
+                           headers=generate_headers())
+            if r.status_code != 204 and r.status_code != 200:
+                print(f"Failed to Leave GC {current_channel}. Code: {r.status_code}.")
+
 
 
 def fetch_all_messages(user_id: str) -> list:
-    print(f"Analysing {user_id}")
+    print(f"Analysing Channel: {user_id}")
     fetching = True
     last_message = ""
     r = req.get(f"https://discord.com/api/v9/channels/{user_id}/messages?limit=50", headers=generate_headers())
@@ -170,6 +210,10 @@ def fetch_all_messages(user_id: str) -> list:
         last_message = messages[message_count_this_block - 1]["id"]
     except IndexError:
         print("DM empty. Skipping!")
+        return user_messages
+    except KeyError:
+        print(f"Got a key error (line 214). This happens sometimes. Skipping this DM.")
+        print(f"Channel ID: {user_id}")
         return user_messages
     if message_count_this_block == 50:
         while fetching:
@@ -186,6 +230,10 @@ def fetch_all_messages(user_id: str) -> list:
             except IndexError:
                 print(f"IndexError... Skipping!")
                 return user_messages
+            except KeyError:
+                print(f"Got a key error (line 214). This happens sometimes. Skipping this DM.")
+                print(f"Channel ID: {user_id}")
+                return user_messages
             if message_count_this_block < 50:
                 fetching = False
 
@@ -199,8 +247,8 @@ def main():
     else:
         error_catcher("invalid_token")
         quit(1)
-    fetch_dms()
-    unfriend_leftovers()
+    fetch_dms()  # DMs
+    unfriend_leftovers()  # Unfriend remaining users on friends list
 
 
 if __name__ == '__main__':
